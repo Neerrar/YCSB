@@ -9,27 +9,22 @@
 
 package com.yahoo.ycsb.db;
 
-import java.util.HashMap;
-import java.util.Iterator;
-import java.util.Map;
-import java.util.Properties;
-import java.util.Set;
-import java.util.Vector;
+import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import com.mongodb.BasicDBObject;
-import com.mongodb.DBAddress;
-import com.mongodb.DBCollection;
-import com.mongodb.DBCursor;
-import com.mongodb.DBObject;
-import com.mongodb.Mongo;
-import com.mongodb.MongoOptions;
-import com.mongodb.WriteConcern;
-import com.mongodb.WriteResult;
+import com.mongodb.*;
+import com.mongodb.client.FindIterable;
+import com.mongodb.client.MongoCollection;
+import com.mongodb.client.MongoCursor;
+import com.mongodb.client.MongoDatabase;
+import com.mongodb.client.result.DeleteResult;
+import com.mongodb.client.result.UpdateResult;
 import com.yahoo.ycsb.ByteArrayByteIterator;
 import com.yahoo.ycsb.ByteIterator;
 import com.yahoo.ycsb.DB;
 import com.yahoo.ycsb.DBException;
+import org.bson.Document;
+import org.bson.conversions.Bson;
 
 /**
  * MongoDB client for YCSB framework.
@@ -47,7 +42,7 @@ public class MongoDbClient extends DB {
     protected static final Integer INCLUDE = Integer.valueOf(1);
 
     /** A singleton Mongo instance. */
-    private static Mongo mongo;
+    private static MongoClient mongo;
 
     /** The default write concern for the test. */
     private static WriteConcern writeConcern;
@@ -80,10 +75,7 @@ public class MongoDbClient extends DB {
             final String maxConnections = props.getProperty(
                     "mongodb.maxconnections", "10");
 
-            if ("none".equals(writeConcernType)) {
-                writeConcern = WriteConcern.NONE;
-            }
-            else if ("safe".equals(writeConcernType)) {
+            if ("safe".equals(writeConcernType)) {
                 writeConcern = WriteConcern.SAFE;
             }
             else if ("normal".equals(writeConcernType)) {
@@ -105,19 +97,19 @@ public class MongoDbClient extends DB {
             }
 
             try {
-                // strip out prefix since Java driver doesn't currently support
-                // standard connection format URL yet
-                // http://www.mongodb.org/display/DOCS/Connections
-                if (url.startsWith("mongodb://")) {
-                    url = url.substring(10);
-                }
+	            // strip out prefix since Java driver doesn't currently support
+	            // standard connection format URL yet
+	            // http://www.mongodb.org/display/DOCS/Connections
+	            if (url.startsWith("mongodb://")) {
+		            url = url.substring(10);
+	            }
 
                 // need to append db to url.
-                url += "/" + database;
+//                url += "/" + database;
                 System.out.println("new database url = " + url);
-                MongoOptions options = new MongoOptions();
-                options.connectionsPerHost = Integer.parseInt(maxConnections);
-                mongo = new Mongo(new DBAddress(url), options);
+	            MongoClientOptions options = MongoClientOptions.builder().connectionsPerHost(Integer.parseInt(maxConnections)).build();
+	            mongo = new MongoClient(url, options);
+
 
                 System.out.println("mongo connection created with " + url);
             }
@@ -159,23 +151,16 @@ public class MongoDbClient extends DB {
      */
     @Override
     public int delete(String table, String key) {
-        com.mongodb.DB db = null;
+        MongoDatabase db = null;
         try {
-            db = mongo.getDB(database);
-            db.requestStart();
-            DBCollection collection = db.getCollection(table);
-            DBObject q = new BasicDBObject().append("_id", key);
-            WriteResult res = collection.remove(q, writeConcern);
-            return res.getN() == 1 ? 0 : 1;
+            db = mongo.getDatabase(database);
+	        MongoCollection<Document> collection = db.getCollection(table);
+	        DeleteResult res = collection.deleteOne(new Document("_id", key));
+            return res.wasAcknowledged() ? 0: 1;
         }
         catch (Exception e) {
             System.err.println(e.toString());
             return 1;
-        }
-        finally {
-            if (db != null) {
-                db.requestDone();
-            }
         }
     }
 
@@ -191,28 +176,20 @@ public class MongoDbClient extends DB {
     @Override
     public int insert(String table, String key,
             HashMap<String, ByteIterator> values) {
-        com.mongodb.DB db = null;
+	    MongoDatabase db = null;
         try {
-            db = mongo.getDB(database);
-
-            db.requestStart();
-
-            DBCollection collection = db.getCollection(table);
-            DBObject r = new BasicDBObject().append("_id", key);
-            for (String k : values.keySet()) {
-                r.put(k, values.get(k).toArray());
-            }
-            WriteResult res = collection.insert(r, writeConcern);
-            return res.getError() == null ? 0 : 1;
+	        db = mongo.getDatabase(database);
+	        MongoCollection<Document> collection = db.getCollection(table);
+	        Document doc = new Document("_id", key);
+	        for (String k : values.keySet()) {
+		        doc.put(k, values.get(k).toArray());
+	        }
+	        collection.insertOne(doc);
+	        return 0;
         }
         catch (Exception e) {
             e.printStackTrace();
             return 1;
-        }
-        finally {
-            if (db != null) {
-                db.requestDone();
-            }
         }
     }
 
@@ -229,41 +206,25 @@ public class MongoDbClient extends DB {
     @SuppressWarnings("unchecked")
     public int read(String table, String key, Set<String> fields,
             HashMap<String, ByteIterator> result) {
-        com.mongodb.DB db = null;
+	    MongoDatabase db = null;
         try {
-            db = mongo.getDB(database);
+	        db = mongo.getDatabase(database);
+	        MongoCollection<Document> collection = db.getCollection(table);
 
-            db.requestStart();
-
-            DBCollection collection = db.getCollection(table);
-            DBObject q = new BasicDBObject().append("_id", key);
-            DBObject fieldsToReturn = new BasicDBObject();
-
-            DBObject queryResult = null;
-            if (fields != null) {
-                Iterator<String> iter = fields.iterator();
-                while (iter.hasNext()) {
-                    fieldsToReturn.put(iter.next(), INCLUDE);
-                }
-                queryResult = collection.findOne(q, fieldsToReturn);
-            }
-            else {
-                queryResult = collection.findOne(q);
-            }
-
+	        Document queryResult = null;
+	        try {
+		        queryResult = collection.find(new Document("_id", key)).first();
+	        } catch( Exception e ) {
+		        // skip
+	        }
             if (queryResult != null) {
-                result.putAll(queryResult.toMap());
+                result.putAll(new LinkedHashMap(queryResult));
             }
             return queryResult != null ? 0 : 1;
         }
         catch (Exception e) {
             System.err.println(e.toString());
             return 1;
-        }
-        finally {
-            if (db != null) {
-                db.requestDone();
-            }
         }
     }
 
@@ -279,35 +240,20 @@ public class MongoDbClient extends DB {
     @Override
     public int update(String table, String key,
             HashMap<String, ByteIterator> values) {
-        com.mongodb.DB db = null;
+	    MongoDatabase db = null;
         try {
-            db = mongo.getDB(database);
-
-            db.requestStart();
-
-            DBCollection collection = db.getCollection(table);
-            DBObject q = new BasicDBObject().append("_id", key);
-            DBObject u = new BasicDBObject();
-            DBObject fieldsToSet = new BasicDBObject();
-            Iterator<String> keys = values.keySet().iterator();
-            while (keys.hasNext()) {
-                String tmpKey = keys.next();
-                fieldsToSet.put(tmpKey, values.get(tmpKey).toArray());
-
-            }
-            u.put("$set", fieldsToSet);
-            WriteResult res = collection.update(q, u, false, false,
-                    writeConcern);
-            return res.getN() == 1 ? 0 : 1;
+	        db = mongo.getDatabase(database);
+	        MongoCollection<Document> collection = db.getCollection(table);
+	        Document doc = new Document();
+	        for( String tmpKey : values.keySet() ) {
+		        doc.put(tmpKey, values.get(tmpKey).toArray());
+	        }
+	        UpdateResult res = collection.updateOne(new Document("_id", key), new Document("$set", doc));
+            return res.wasAcknowledged() ? 0 : 1;
         }
         catch (Exception e) {
             System.err.println(e.toString());
             return 1;
-        }
-        finally {
-            if (db != null) {
-                db.requestDone();
-            }
         }
     }
 
@@ -324,36 +270,24 @@ public class MongoDbClient extends DB {
     @Override
     public int scan(String table, String startkey, int recordcount,
             Set<String> fields, Vector<HashMap<String, ByteIterator>> result) {
-        com.mongodb.DB db = null;
+	    MongoDatabase db = null;
         try {
-            db = mongo.getDB(database);
-            db.requestStart();
-            DBCollection collection = db.getCollection(table);
-            // { "_id":{"$gte":startKey, "$lte":{"appId":key+"\uFFFF"}} }
-            DBObject scanRange = new BasicDBObject().append("$gte", startkey);
-            DBObject q = new BasicDBObject().append("_id", scanRange);
-            DBCursor cursor = collection.find(q).limit(recordcount);
-            while (cursor.hasNext()) {
-                // toMap() returns a Map, but result.add() expects a
-                // Map<String,String>. Hence, the suppress warnings.
-                HashMap<String, ByteIterator> resultMap = new HashMap<String, ByteIterator>();
-
-                DBObject obj = cursor.next();
-                fillMap(resultMap, obj);
-
-                result.add(resultMap);
-            }
+	        db = mongo.getDatabase(database);
+	        MongoCollection<Document> collection = db.getCollection(table);
+	        MongoCursor<Document> cursor =
+		        collection.find(new Document("_id", new Document("$gte", startkey)))
+			        .limit(recordcount).iterator();
+	        while (cursor.hasNext()) {
+		        HashMap<String, ByteIterator> resultMap = new HashMap<String, ByteIterator>();
+		        fillHashMap(resultMap, cursor.next());
+		        result.add(resultMap);
+	        }
 
             return 0;
         }
         catch (Exception e) {
             System.err.println(e.toString());
             return 1;
-        }
-        finally {
-            if (db != null) {
-                db.requestDone();
-            }
         }
 
     }
@@ -368,6 +302,22 @@ public class MongoDbClient extends DB {
     protected void fillMap(HashMap<String, ByteIterator> resultMap, DBObject obj) {
         Map<String, Object> objMap = obj.toMap();
         for (Map.Entry<String, Object> entry : objMap.entrySet()) {
+            if (entry.getValue() instanceof byte[]) {
+                resultMap.put(entry.getKey(), new ByteArrayByteIterator(
+                        (byte[]) entry.getValue()));
+            }
+        }
+    }
+
+    /**
+     * TODO - Finish
+     *
+     * @param resultMap
+     * @param obj
+     */
+    @SuppressWarnings("unchecked")
+    protected void fillHashMap(HashMap<String, ByteIterator> resultMap, Document obj) {
+        for (Map.Entry<String, Object> entry : obj.entrySet()) {
             if (entry.getValue() instanceof byte[]) {
                 resultMap.put(entry.getKey(), new ByteArrayByteIterator(
                         (byte[]) entry.getValue()));
