@@ -10,12 +10,12 @@
 package com.yahoo.ycsb.db;
 
 import java.util.*;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import com.mongodb.*;
-import com.mongodb.client.FindIterable;
 import com.mongodb.client.MongoCollection;
-import com.mongodb.client.MongoCursor;
 import com.mongodb.client.MongoDatabase;
 import com.mongodb.client.result.DeleteResult;
 import com.mongodb.client.result.UpdateResult;
@@ -24,7 +24,6 @@ import com.yahoo.ycsb.ByteIterator;
 import com.yahoo.ycsb.DB;
 import com.yahoo.ycsb.DBException;
 import org.bson.Document;
-import org.bson.conversions.Bson;
 
 /**
  * MongoDB client for YCSB framework.
@@ -39,7 +38,7 @@ import org.bson.conversions.Bson;
 public class MongoDbClient extends DB {
 
     /** Used to include a field in a response. */
-    protected static final Integer INCLUDE = Integer.valueOf(1);
+    protected static final Integer INCLUDE = 1;
 
     /** A singleton Mongo instance. */
     private static MongoClient mongo;
@@ -59,6 +58,9 @@ public class MongoDbClient extends DB {
      */
     @Override
     public void init() throws DBException {
+	    Logger mongoLogger = Logger.getLogger( "com.mongodb" );
+	    mongoLogger.setLevel(Level.WARNING);
+
         initCount.incrementAndGet();
         synchronized (INCLUDE) {
             if (mongo != null) {
@@ -110,7 +112,6 @@ public class MongoDbClient extends DB {
 	            MongoClientOptions options = MongoClientOptions.builder().connectionsPerHost(Integer.parseInt(maxConnections)).build();
 	            mongo = new MongoClient(url, options);
 
-
                 System.out.println("mongo connection created with " + url);
             }
             catch (Exception e1) {
@@ -118,7 +119,6 @@ public class MongoDbClient extends DB {
                         .println("Could not initialize MongoDB connection pool for Loader: "
                                 + e1.toString());
                 e1.printStackTrace();
-                return;
             }
         }
     }
@@ -137,7 +137,6 @@ public class MongoDbClient extends DB {
                 System.err.println("Could not close MongoDB connection pool: "
                         + e1.toString());
                 e1.printStackTrace();
-                return;
             }
         }
     }
@@ -274,12 +273,10 @@ public class MongoDbClient extends DB {
         try {
 	        db = mongo.getDatabase(database);
 	        MongoCollection<Document> collection = db.getCollection(table);
-	        MongoCursor<Document> cursor =
-		        collection.find(new Document("_id", new Document("$gte", startkey)))
-			        .limit(recordcount).iterator();
-	        while (cursor.hasNext()) {
+	        for( Document document : collection.find(new Document("_id", new Document("$gte", startkey)))
+		        .limit(recordcount) ) {
 		        HashMap<String, ByteIterator> resultMap = new HashMap<String, ByteIterator>();
-		        fillHashMap(resultMap, cursor.next());
+		        fillHashMap(resultMap, document);
 		        result.add(resultMap);
 	        }
 

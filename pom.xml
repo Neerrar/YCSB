@@ -48,7 +48,7 @@
     <accumulo.version>1.6.0</accumulo.version>
     <cassandra.version>0.7.0</cassandra.version>
     <infinispan.version>7.1.0.CR1</infinispan.version>
-    <openjpa.jdbc.version>2.1.1</openjpa.jdbc.version>
+    <openjpa.jdbc.version>2.3.0</openjpa.jdbc.version>
     <mapkeeper.version>1.0</mapkeeper.version>
     <mongodb.version>3.0.0-rc0</mongodb.version>
     <orientdb.version>1.0.1</orientdb.version>
@@ -57,6 +57,8 @@
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <thrift.version>0.8.0</thrift.version>
     <hypertable.version>0.9.5.6</hypertable.version>
+	<!-- JDBC drivers version -->
+	<jdbc.postgresql.version>9.4-1201-jdbc41</jdbc.postgresql.version>
   </properties>
 
   <modules>
@@ -71,6 +73,7 @@
     <!--<module>gemfire</module>-->
     <module>infinispan</module>
     <module>jdbc</module>
+    <module>jdbc-json</module>
     <!-- module>mapkeeper</module -->
     <module>mongodb</module>
     <module>orientdb</module>

@@ -19,7 +19,7 @@ Git clone YCSB and compile:
 Set the host, port, and password (do not redis auth is not turned on) in the 
 workload you plan to run.
 
-- `redis.url`
+- `redis.host`
 - `redis.port`
 - `redis.password`
 
